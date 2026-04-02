@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reverse Nodes in K-Group 可视化</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',Arial,sans-serif; background:linear-gradient(135deg,#1a1a2e,#16213e); min-height:100vh; color:#fff; padding:20px; }
+.container { max-width:1200px; margin:0 auto; }
+h1 { text-align:center; margin-bottom:8px; color:#00d9ff; }
+.info { text-align:center; margin-bottom:16px; color:#888; font-size:14px; }
+.controls { display:flex; justify-content:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
+button { padding:10px 22px; font-size:14px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; transition:all .2s; }
+button.primary { background:#00d9ff; color:#1a1a2e; }
+button.primary:hover { background:#00b8d9; }
+button.secondary { background:#4a4a6a; color:#fff; }
+button.secondary:hover { background:#5a5a7a; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.speed-control { display:flex; align-items:center; gap:6px; color:#888; font-size:13px; }
+input[type="range"] { width:120px; }
+
+/* step display */
+.step-box { background:rgba(0,217,255,.08); border:2px solid #00d9ff; border-radius:12px; padding:16px 20px; margin-bottom:16px; }
+.step-title { font-size:16px; color:#00d9ff; margin-bottom:6px; font-weight:bold; }
+.step-desc { font-size:13px; line-height:1.6; color:#ccc; }
+.step-desc code { background:rgba(0,0,0,.3); padding:1px 5px; border-radius:3px; color:#00d9ff; font-size:13px; }
+.list-status { margin-top:8px; padding-top:8px; border-top:1px solid rgba(0,217,255,.2); font-size:12px; color:#888; }
+.list-status span { color:#00d9ff; margin-left:8px; font-family:monospace; font-size:13px; }
+
+/* canvas */
+.canvas-box { background:rgba(255,255,255,.04); border-radius:14px; padding:60px 30px 30px; margin-bottom:16px; position:relative; overflow:visible; }
+svg.arrows { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+.nodes-row { display:flex; justify-content:center; gap:50px; position:relative; }
+.nd { width:64px; height:64px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:bold; border:3px solid #4a4a6a; background:linear-gradient(145deg,#2d2d44,#1a1a2e); position:relative; z-index:10; transition:border-color .3s, background .3s, box-shadow .3s; flex-shrink:0; }
+.nd.dummy { border-color:#00ff88; background:linear-gradient(145deg,#1a4a1a,#0d330d); font-size:13px; }
+.nd.in-group { border-color:#00d9ff; background:linear-gradient(145deg,#1a4a4a,#0d3333); box-shadow:0 0 16px rgba(0,217,255,.3); }
+.nd.reversed { border-color:#ff00d9; background:linear-gradient(145deg,#4a1a4a,#330d33); }
+.nd.done { border-color:#00ff88; background:linear-gradient(145deg,#1a4a1a,#0d330d); }
+
+/* pointers */
+.ptrs { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+.ptr { position:absolute; padding:4px 8px; border-radius:5px; font-size:11px; font-weight:bold; white-space:nowrap; transition:left .35s ease, top .35s ease; z-index:100; }
+.ptr::after { content:''; position:absolute; bottom:-5px; left:50%; transform:translateX(-50%); border:5px solid transparent; }
+.ptr.pre_group  { background:#95e1d3; color:#000; }
+.ptr.pre_group::after { border-top-color:#95e1d3; }
+.ptr.group_tail { background:#ff6b6b; color:#000; }
+.ptr.group_tail::after { border-top-color:#ff6b6b; }
+.ptr.group_head { background:#4ecdc4; color:#000; }
+.ptr.group_head::after { border-top-color:#4ecdc4; }
+.ptr.ngh         { background:#ffe66d; color:#000; }
+.ptr.ngh::after  { border-top-color:#ffe66d; }
+.ptr.pre         { background:#f38181; color:#000; }
+.ptr.pre::after  { border-top-color:#f38181; }
+.ptr.cur         { background:#aa96da; color:#000; }
+.ptr.cur::after  { border-top-color:#aa96da; }
+.ptr.nxt         { background:#fcbad3; color:#000; }
+.ptr.nxt::after  { border-top-color:#fcbad3; }
+
+/* code */
+.code-box { background:rgba(0,0,0,.3); border-radius:12px; padding:14px 18px; font-family:'Consolas','Monaco',monospace; font-size:12px; overflow-x:auto; margin-bottom:16px; }
+.cl { padding:3px 6px; border-radius:3px; margin:1px 0; white-space:pre; }
+.cl.active { background:rgba(0,217,255,.18); border-left:3px solid #00d9ff; }
+.kw { color:#ff79c6; } .fn { color:#8be9fd; } .vr { color:#ffb86c; } .cm { color:#6272a4; }
+
+/* legend */
+.legend { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; font-size:12px; color:#888; }
+.legend-item { display:flex; align-items:center; gap:6px; }
+.legend-dot { width:16px; height:16px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Reverse Nodes in K-Group 可视化</h1>
+<p class="info">LeetCode 25 &middot; k = 3 &middot; 链表: 1 → 2 → 3 → 4 → 5</p>
+
+<div class="controls">
+  <button class="primary" id="playBtn">&#9654; 开始</button>
+  <button class="secondary" id="backBtn">&#9664; 回退</button>
+  <button class="secondary" id="stepBtn">&#9654;| 单步</button>
+  <button class="secondary" id="resetBtn">&#8634; 重置</button>
+  <div class="speed-control"><span>速度</span><input type="range" id="spd" min="1" max="5" value="3"><span id="spdV">3</span></div>
+</div>
+
+<div class="step-box">
+  <div class="step-title" id="sTitle">准备就绪</div>
+  <div class="step-desc" id="sDesc">点击 "开始" 或 "单步" 观看算法执行过程。每一步只变动一个指针。</div>
+  <div class="list-status">链表 next 顺序：<span id="lstat">dummy → 1 → 2 → 3 → 4 → 5 → null</span></div>
+</div>
+
+<div class="canvas-box" id="canvas">
+  <svg class="arrows" id="arrowSvg"></svg>
+  <div class="nodes-row" id="nodesRow"></div>
+  <div class="ptrs" id="ptrsDiv"></div>
+</div>
+
+<div class="code-box" id="codeBox"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#00ff88"></div>dummy</div>
+  <div class="legend-item"><div class="legend-dot" style="border:2px solid #4a4a6a;background:#2d2d44"></div>普通</div>
+  <div class="legend-item"><div class="legend-dot" style="border:2px solid #00d9ff;background:#1a4a4a"></div>当前组</div>
+  <div class="legend-item"><div class="legend-dot" style="border:2px solid #ff00d9;background:#4a1a4a"></div>已翻转</div>
+</div>
+</div>
+
+<script>
+// ==================== 数据 ====================
+const VALS = [1,2,3,4,5];
+const K = 3;
+const DELAYS = [1400,1000,650,400,200];
+
+// next 指针表：key → nextKey。 key 用字符串 "d","1","2",...
+let nextMap = {};
+// 初始: d→1→2→3→4→5→null
+function initNext() {
+  nextMap = {};
+  nextMap['d'] = '1';
+  for (let i = 0; i < VALS.length; i++) {
+    nextMap[String(VALS[i])] = i + 1 < VALS.length ? String(VALS[i+1]) : null;
+  }
+}
+initNext();
+
+// 按 next 遍历得到链表顺序
+function getOrder() {
+  const r = ['d']; let c = nextMap['d'];
+  while (c) { r.push(c); c = nextMap[c]; }
+  return r;
+}
+
+// 友好显示：展示所有节点的 next 指针状态
+function fmtOrder() {
+  // 先显示从 d 可达的链
+  const visited = new Set();
+  const parts = [];
+  let c = 'd';
+  while (c) {
+    visited.add(c);
+    parts.push(c === 'd' ? 'dummy' : c);
+    c = nextMap[c] || null;
+  }
+  parts.push('null');
+  let result = parts.join(' → ');
+
+  // 再显示不可达的节点（翻转过程中临时断开的）
+  const detached = [];
+  for (const [from, to] of Object.entries(nextMap)) {
+    if (!visited.has(from)) {
+      detached.push(`${from}→${to || 'null'}`);
+    }
+  }
+  if (detached.length > 0) {
+    result += '  |  断开: ' + detached.join(', ');
+  }
+  return result;
+}
+
+// ==================== Python 代码 ====================
+const CODE = [
+/*0*/  'class Solution:',
+/*1*/  '    def reverseKGroup(self, head, k):',
+/*2*/  '        dummy = ListNode(0)',
+/*3*/  '        dummy.next = head',
+/*4*/  '        pre_group = dummy',
+/*5*/  '        while True:',
+/*6*/  '            group_tail = pre_group',
+/*7*/  '            for i in range(k):',
+/*8*/  '                group_tail = group_tail.next',
+/*9*/  '                if group_tail is None: return dummy.next',
+/*10*/ '            group_head = pre_group.next',
+/*11*/ '            next_group_head = group_tail.next',
+/*12*/ '            pre, cur = next_group_head, group_head',
+/*13*/ '            while cur != next_group_head:',
+/*14*/ '                nxt = cur.next',
+/*15*/ '                cur.next = pre',
+/*16*/ '                pre = cur',
+/*17*/ '                cur = nxt',
+/*18*/ '            pre_group.next = pre',
+/*19*/ '            pre_group = group_head',
+];
+
+// ==================== 步骤定义 ====================
+// 每步: { title, desc, line (代码行号), ptrs:{name:nodeKey,...}, setNext:[from,to], highlight:[], nodeClass:{key:cls} }
+// ptrs 中 null 表示删除该指针
+function buildSteps() {
+  return [
+  // ---- 初始化 ----
+  { title:'初始化', desc:'<code>pre_group = dummy</code>', line:4,
+    ptrs:{pre_group:'d'} },
+
+  // ---- 第一组：找 tail ----
+  { title:'group_tail = pre_group', desc:'<code>group_tail</code> 从 pre_group(dummy) 开始', line:6,
+    ptrs:{group_tail:'d'} },
+  { title:'group_tail = group_tail.next', desc:'i=0: <code>group_tail</code> → 节点 1', line:8,
+    ptrs:{group_tail:'1'}, highlight:['1'] },
+  { title:'group_tail = group_tail.next', desc:'i=1: <code>group_tail</code> → 节点 2', line:8,
+    ptrs:{group_tail:'2'}, highlight:['1','2'] },
+  { title:'group_tail = group_tail.next', desc:'i=2: <code>group_tail</code> → 节点 3。k 步走完，节点足够', line:8,
+    ptrs:{group_tail:'3'}, highlight:['1','2','3'] },
+
+  // ---- 记录 head / ngh ----
+  { title:'group_head = pre_group.next', desc:'<code>group_head</code> = 节点 1', line:10,
+    ptrs:{group_head:'1'} },
+  { title:'next_group_head = group_tail.next', desc:'<code>next_group_head</code> = 节点 4', line:11,
+    ptrs:{ngh:'4'} },
+
+  // ---- 初始化 pre, cur ----
+  { title:'pre = next_group_head', desc:'<code>pre</code> = 节点 4', line:12,
+    ptrs:{pre:'4'} },
+  { title:'cur = group_head', desc:'<code>cur</code> = 节点 1', line:12,
+    ptrs:{cur:'1'} },
+
+  // ---- 翻转节点 1 ----
+  { title:'nxt = cur.next', desc:'<code>nxt</code> = 节点 2（保存 cur 的下一个）', line:14,
+    ptrs:{nxt:'2'} },
+  { title:'cur.next = pre', desc:'节点 1 的 next 指向节点 4（原来指向 2）', line:15,
+    setNext:['1','4'] },
+  { title:'pre = cur', desc:'<code>pre</code> 移到节点 1', line:16,
+    ptrs:{pre:'1'} },
+  { title:'cur = nxt', desc:'<code>cur</code> 移到节点 2', line:17,
+    ptrs:{cur:'2'} },
+
+  // ---- 翻转节点 2 ----
+  { title:'nxt = cur.next', desc:'<code>nxt</code> = 节点 3', line:14,
+    ptrs:{nxt:'3'} },
+  { title:'cur.next = pre', desc:'节点 2 的 next 指向节点 1（原来指向 3）', line:15,
+    setNext:['2','1'] },
+  { title:'pre = cur', desc:'<code>pre</code> 移到节点 2', line:16,
+    ptrs:{pre:'2'} },
+  { title:'cur = nxt', desc:'<code>cur</code> 移到节点 3', line:17,
+    ptrs:{cur:'3'} },
+
+  // ---- 翻转节点 3 ----
+  { title:'nxt = cur.next', desc:'<code>nxt</code> = 节点 4', line:14,
+    ptrs:{nxt:'4'} },
+  { title:'cur.next = pre', desc:'节点 3 的 next 指向节点 2（原来指向 4）', line:15,
+    setNext:['3','2'] },
+  { title:'pre = cur', desc:'<code>pre</code> 移到节点 3', line:16,
+    ptrs:{pre:'3'} },
+  { title:'cur = nxt', desc:'<code>cur</code> 移到节点 4 = next_group_head，循环结束', line:17,
+    ptrs:{cur:'4'} },
+
+  // ---- 连接 + 更新 ----
+  { title:'pre_group.next = pre', desc:'dummy 的 next 指向节点 3（翻转后的新头）', line:18,
+    setNext:['d','3'], ptrs:{cur:null, nxt:null}, nodeClass:{'3':'reversed','2':'reversed','1':'reversed'} },
+  { title:'pre_group = group_head', desc:'<code>pre_group</code> 移到节点 1（当前组的原头，现在是尾）', line:19,
+    ptrs:{pre_group:'1', group_tail:null, group_head:null, ngh:null, pre:null},
+    swapPositions: true },
+
+  // ---- 第二组：找 tail ----
+  { title:'group_tail = pre_group', desc:'<code>group_tail</code> 从 pre_group(节点 1) 开始', line:6,
+    ptrs:{group_tail:'1'} },
+  { title:'group_tail = group_tail.next', desc:'i=0: <code>group_tail</code> → 节点 4', line:8,
+    ptrs:{group_tail:'4'}, highlight:['4'] },
+  { title:'group_tail = group_tail.next', desc:'i=1: <code>group_tail</code> → 节点 5', line:8,
+    ptrs:{group_tail:'5'}, highlight:['4','5'] },
+  { title:'group_tail.next is None', desc:'i=2: <code>group_tail.next</code> 为 None，节点不足 k=3 个，返回 dummy.next', line:9,
+    ptrs:{group_tail:null}, highlight:[] },
+
+  // ---- 完成 ----
+  { title:'算法完成', desc:'最终结果：<strong>3 → 2 → 1 → 4 → 5</strong>', line:9,
+    ptrs:{pre_group:null}, final:true },
+  ];
+}
+
+// ==================== 渲染 ====================
+const nodesRow = document.getElementById('nodesRow');
+const arrowSvg = document.getElementById('arrowSvg');
+const ptrsDiv  = document.getElementById('ptrsDiv');
+const codeBox  = document.getElementById('codeBox');
+const sTitle   = document.getElementById('sTitle');
+const sDesc    = document.getElementById('sDesc');
+const lstat    = document.getElementById('lstat');
+const playBtn  = document.getElementById('playBtn');
+const backBtn  = document.getElementById('backBtn');
+const stepBtn  = document.getElementById('stepBtn');
+const resetBtn = document.getElementById('resetBtn');
+const spdInput = document.getElementById('spd');
+const spdV     = document.getElementById('spdV');
+
+// 节点显示顺序（视觉位置）
+let displayOrder = ['d', ...VALS.map(String)];
+// 活跃的指针
+let activePointers = {};
+let steps, curStep, running, finished, timer;
+// 快照栈，用于回退
+let history = [];
+
+function saveSnapshot() {
+  history.push({
+    nextMap: {...nextMap},
+    displayOrder: [...displayOrder],
+    activePointers: {...activePointers},
+    // 保存每个节点的 className
+    nodeClasses: displayOrder.reduce((m,k) => {
+      const el = document.getElementById('nd-'+k);
+      if (el) m[k] = el.className;
+      return m;
+    }, {}),
+  });
+}
+
+function init() {
+  initNext();
+  displayOrder = ['d', ...VALS.map(String)];
+  activePointers = {};
+  history = [];
+  steps = buildSteps();
+  curStep = 0; running = false; finished = false;
+  clearTimeout(timer);
+  playBtn.disabled = false; stepBtn.disabled = false; backBtn.disabled = true;
+  playBtn.textContent = '\u25B6 开始';
+  sTitle.textContent = '准备就绪';
+  sDesc.innerHTML = '点击 "开始" 或 "单步" 观看算法执行过程。每一步只变动一个指针。';
+  // 清除结果弹窗
+  document.querySelectorAll('.final-popup').forEach(e => e.remove());
+  renderCode();
+  renderNodes();
+  drawArrows();
+  renderPtrs();
+  lstat.textContent = fmtOrder();
+}
+
+function renderCode() {
+  codeBox.innerHTML = CODE.map((t, i) => {
+    let html = t
+      .replace(/\b(class|def|while|for|in|if|is|None|return|True)\b/g, '<span class="kw">$1</span>')
+      .replace(/\b(reverseKGroup|range|ListNode)\b/g, '<span class="fn">$1</span>')
+      .replace(/\b(dummy|pre_group|group_tail|group_head|next_group_head|pre|cur|nxt|head|self|k|i)\b/g, '<span class="vr">$1</span>');
+    return `<div class="cl" id="cl${i}">${html}</div>`;
+  }).join('');
+}
+
+function renderNodes() {
+  nodesRow.innerHTML = displayOrder.map(k => {
+    let label = k === 'd' ? 'dummy' : k;
+    let cls = 'nd';
+    if (k === 'd') cls += ' dummy';
+    // 保持已有的样式
+    const el = document.getElementById('nd-'+k);
+    if (el) {
+      if (el.classList.contains('reversed')) cls += ' reversed';
+      if (el.classList.contains('in-group')) cls += ' in-group';
+    }
+    return `<div class="${cls}" id="nd-${k}">${label}</div>`;
+  }).join('');
+}
+
+function drawArrows() {
+  // 遍历 nextMap 中所有条目画箭头，而非仅从 d 可达的链
+  // 这样每次 setNext 修改一个 next 指针后，新箭头立刻出现，旧箭头立刻消失
+  const svg = arrowSvg;
+  svg.innerHTML = '';
+
+  // 确保 marker + glow 定义先添加
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  defs.innerHTML = `
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#555"/>
+    </marker>
+    <marker id="ah-red" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#ff2222"/>
+    </marker>
+  `;
+  svg.appendChild(defs);
+
+  // 初始正向链接集合（用来判断哪些是原始正向箭头）
+  const initialForward = new Set();
+  for (let i = 0; i < VALS.length - 1; i++) {
+    initialForward.add(String(VALS[i]) + '->' + String(VALS[i+1]));
+  }
+  initialForward.add('d->' + String(VALS[0]));
+
+  for (const [from, to] of Object.entries(nextMap)) {
+    if (!to) continue;
+
+    const fromEl = document.getElementById('nd-'+from);
+    const toEl   = document.getElementById('nd-'+to);
+    if (!fromEl || !toEl) continue;
+
+    const canvas = document.getElementById('canvas');
+    const cRect = canvas.getBoundingClientRect();
+    const fRect = fromEl.getBoundingClientRect();
+    const tRect = toEl.getBoundingClientRect();
+
+    const x1 = fRect.right - cRect.left;
+    const y1 = fRect.top + fRect.height/2 - cRect.top;
+    const x2 = tRect.left - cRect.left;
+    const y2 = tRect.top + tRect.height/2 - cRect.top;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+
+    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) continue;
+
+    const key = from + '->' + to;
+    const isOriginal = initialForward.has(key);
+
+    let path;
+    if (Math.abs(dx) > 20) {
+      if (dx > 0) {
+        if (isOriginal) {
+          // 原始正向：直线
+          path = `M${x1},${y1} L${x2},${y2}`;
+        } else {
+          // 新的正向红色箭头：向下弧线，区别于灰色直线
+          const midY = Math.max(y1, y2) + 35;
+          path = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
+        }
+      } else {
+        // 向左：画弧线绕上方
+        const midY = Math.min(y1, y2) - 45;
+        path = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
+      }
+    } else {
+      path = `M${x1},${y1} L${x2},${y2}`;
+    }
+
+    // 渲染箭头
+    const color = isOriginal ? '#555' : '#ff2222';
+    const marker = isOriginal ? 'url(#ah)' : 'url(#ah-red)';
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg','path');
+    line.setAttribute('d', path);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', '2.5');
+    line.setAttribute('fill', 'none');
+    line.setAttribute('marker-end', marker);
+    svg.appendChild(line);
+  }
+}
+
+function renderPtrs() {
+  // 删除不再活跃的
+  ptrsDiv.querySelectorAll('.ptr').forEach(el => {
+    const name = el.dataset.name;
+    if (!(name in activePointers) || activePointers[name] === null) el.remove();
+  });
+
+  for (const [name, nodeKey] of Object.entries(activePointers)) {
+    if (!nodeKey) continue;
+    const nodeEl = document.getElementById('nd-'+nodeKey);
+    if (!nodeEl) continue;
+
+    let el = ptrsDiv.querySelector(`.ptr[data-name="${name}"]`);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'ptr ' + name;
+      el.dataset.name = name;
+      el.textContent = name;
+      ptrsDiv.appendChild(el);
+    }
+
+    const canvas = document.getElementById('canvas');
+    const cRect = canvas.getBoundingClientRect();
+    const nRect = nodeEl.getBoundingClientRect();
+
+    // 多个指针指向同一节点时错开
+    const sameNode = Object.entries(activePointers).filter(([n,v]) => v === nodeKey && v !== null);
+    const idx = sameNode.findIndex(([n]) => n === name);
+    const offset = (idx - (sameNode.length-1)/2) * 20;
+
+    el.style.left = (nRect.left + nRect.width/2 - cRect.left + offset) + 'px';
+    el.style.top  = (nRect.top - cRect.top - 28) + 'px';
+    el.style.transform = 'translateX(-50%)';
+  }
+}
+
+// ==================== 执行步骤 ====================
+function execStep(s) {
+  // 保存快照用于回退
+  saveSnapshot();
+  backBtn.disabled = false;
+
+  sTitle.textContent = s.title;
+  sDesc.innerHTML = s.desc;
+
+  // 代码高亮
+  document.querySelectorAll('.cl').forEach(e => e.classList.remove('active'));
+  if (s.line !== undefined) document.getElementById('cl'+s.line)?.classList.add('active');
+
+  // 修改 next 指针
+  if (s.setNext) {
+    nextMap[s.setNext[0]] = s.setNext[1];
+    lstat.textContent = fmtOrder();
+  }
+
+  // 更新指针
+  if (s.ptrs) {
+    for (const [name, val] of Object.entries(s.ptrs)) {
+      if (val === null) delete activePointers[name];
+      else activePointers[name] = val;
+    }
+  }
+
+  // 高亮节点
+  document.querySelectorAll('.nd').forEach(e => {
+    if (!e.classList.contains('dummy') && !e.classList.contains('reversed'))
+      e.classList.remove('in-group');
+  });
+  if (s.highlight) {
+    s.highlight.forEach(k => document.getElementById('nd-'+k)?.classList.add('in-group'));
+  }
+
+  // 节点样式
+  if (s.nodeClass) {
+    for (const [k, cls] of Object.entries(s.nodeClass)) {
+      const el = document.getElementById('nd-'+k);
+      if (el) { el.className = 'nd ' + cls; }
+    }
+  }
+
+  // 交换视觉位置（翻转完成后重排）
+  if (s.swapPositions) {
+    displayOrder = getOrder();
+    renderNodes();
+    ['3','2','1'].forEach(k => document.getElementById('nd-'+k)?.classList.add('reversed'));
+  }
+
+  // 始终重绘箭头和指针，保证同步
+  drawArrows();
+  renderPtrs();
+
+  // 最终弹窗
+  if (s.final) {
+    finished = true; running = false;
+    playBtn.disabled = true; stepBtn.disabled = true;
+    document.querySelectorAll('.nd.in-group').forEach(e => e.classList.remove('in-group'));
+    showFinal();
+  }
+}
+
+function restoreSnapshot(snap) {
+  nextMap = {...snap.nextMap};
+  displayOrder = [...snap.displayOrder];
+  activePointers = {...snap.activePointers};
+
+  renderNodes();
+  // 恢复节点样式
+  for (const [k, cls] of Object.entries(snap.nodeClasses)) {
+    const el = document.getElementById('nd-'+k);
+    if (el) el.className = cls;
+  }
+
+  drawArrows();
+  renderPtrs();
+  lstat.textContent = fmtOrder();
+}
+
+function doBack() {
+  if (history.length === 0) return;
+  running = false; clearTimeout(timer);
+  playBtn.textContent = '\u25B6 继续';
+
+  const snap = history.pop();
+  curStep--;
+  finished = false;
+  playBtn.disabled = false; stepBtn.disabled = false;
+
+  // 清除弹窗
+  document.querySelectorAll('.final-popup').forEach(e => e.remove());
+
+  restoreSnapshot(snap);
+
+  // 显示上一步的信息
+  if (curStep > 0) {
+    const prev = steps[curStep - 1];
+    sTitle.textContent = prev.title;
+    sDesc.innerHTML = prev.desc;
+    document.querySelectorAll('.cl').forEach(e => e.classList.remove('active'));
+    if (prev.line !== undefined) document.getElementById('cl'+prev.line)?.classList.add('active');
+  } else {
+    sTitle.textContent = '准备就绪';
+    sDesc.innerHTML = '点击 "开始" 或 "单步" 观看算法执行过程。每一步只变动一个指针。';
+    document.querySelectorAll('.cl').forEach(e => e.classList.remove('active'));
+  }
+
+  backBtn.disabled = history.length === 0;
+}
+
+function showFinal() {
+  const d = document.createElement('div');
+  d.className = 'final-popup';
+  d.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,217,255,.95);color:#1a1a2e;padding:32px 50px;border-radius:16px;font-weight:bold;z-index:1000;box-shadow:0 8px 32px rgba(0,217,255,.5);text-align:center;cursor:pointer;';
+  d.innerHTML = '<div style="font-size:14px;opacity:.7;margin-bottom:8px">最终结果</div><div style="font-size:28px">3 → 2 → 1 → 4 → 5</div><div style="font-size:11px;margin-top:8px;opacity:.5">点击关闭</div>';
+  d.onclick = () => d.remove();
+  document.body.appendChild(d);
+}
+
+// ==================== 控制 ====================
+function doStep() {
+  if (finished || curStep >= steps.length) return;
+  running = false; clearTimeout(timer);
+  playBtn.textContent = '\u25B6 继续';
+  execStep(steps[curStep++]);
+}
+
+function togglePlay() {
+  if (finished) return;
+  if (running) { running = false; clearTimeout(timer); playBtn.textContent = '\u25B6 继续'; return; }
+  running = true; playBtn.textContent = '\u23F8 暂停';
+  autoRun();
+}
+
+function autoRun() {
+  if (!running || curStep >= steps.length) { running = false; playBtn.textContent = '\u25B6 继续'; return; }
+  execStep(steps[curStep++]);
+  timer = setTimeout(autoRun, DELAYS[parseInt(spdInput.value)-1]);
+}
+
+playBtn.onclick = togglePlay;
+stepBtn.onclick = doStep;
+backBtn.onclick = doBack;
+resetBtn.onclick = init;
+spdInput.oninput = () => { spdV.textContent = spdInput.value; };
+window.addEventListener('resize', () => { drawArrows(); renderPtrs(); });
+
+init();
+</script>
+</body>
+</html>
